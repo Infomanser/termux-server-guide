@@ -86,15 +86,15 @@ nameserver 1.1.1.1
 Налаштування `~/.ssh/config`:
 
 ```text
-Host moto
-  HostName moto.tvij-domen.pp.ua
+Host phone
+  HostName phone.tvij-domen.com
   User u0_a... (твій логін з телефону)
   ProxyCommand cloudflared access ssh --hostname %h
 ```
 
 Підключення:
 ```bash
-ssh moto
+ssh phone
 ```
 
 ---

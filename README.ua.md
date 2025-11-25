@@ -50,7 +50,7 @@ termux-wake-lock
 
 ### Вимкнення оптимізації батареї
 
-Настройки → Додатки → Termux → Батарея →
+Налаштування → Додатки → Termux → Батарея →
 
 * **Дозволити фонову активність**
 * **Вимкнути оптимізацію батареї**
@@ -121,8 +121,8 @@ cloudflared tunnel run --token <ТОКЕН>
 Або:
 
 ```bash
-# Надійний варіант під Android 12–14
-proot -0 cloudflared tunnel run --token <ТОКЕН>
+# Надійний варіант під Android 12–14 (фікс шляхів)
+termux-chroot cloudflared tunnel run --token <ТОКЕН>
 ```
 
 ---
@@ -133,9 +133,8 @@ proot -0 cloudflared tunnel run --token <ТОКЕН>
 # Встановити PM2
 npm install pm2 -g
 
-# Запустити cloudflared як сервіс
-pm2 start cloudflared --name tunnel -- \
-  tunnel run --protocol http2 --token <ТОКЕН>
+# Запустити cloudflared як сервіс (використовуємо termux-chroot для стабільності)
+pm2 start termux-chroot --name "phone" -- cloudflared tunnel run --protocol http2 --token <ТОКЕН>
 
 # Зберегти автозапуск
 pm2 save
@@ -146,7 +145,7 @@ pm2 save
 ## Підключення з компʼютера
 
 ```bash
-# Авторизація пристрою у Zero Trust
+# Авторизація пристрою у Zero Trust (якщо потрібно)
 cloudflared access login phone.tvij-domen.com
 ```
 
@@ -155,7 +154,7 @@ cloudflared access login phone.tvij-domen.com
 ```text
 Host phone
   HostName phone.tvij-domen.com
-  User u0_a123
+  User u0_a...  # Результат виконання whoami
   ProxyCommand cloudflared access ssh --hostname %h
 ```
 
@@ -179,10 +178,10 @@ pm2 save
 
 Корисні команди:
 
-* `pm2 logs`
-* `pm2 list`
-* `pm2 restart mybot`
-* `pm2 resurrect`
+* `pm2 logs` — логи контейнера
+* `pm2 list` — Список контейнерів
+* `pm2 restart mybot` — Рестарт (в данному випадку) бота
+* `pm2 resurrect` — Підняття збереженого стану після перезавантаження
 
 ---
 
@@ -192,20 +191,15 @@ pm2 save
 # Встановити модуль ротації логів
 pm2 install pm2-logrotate
 
-# Максимальний розмір файлу
+# Ліміт розміру файлу (10 МБ)
 pm2 set pm2-logrotate:max_size 10M
 
-# Зберігати 3 архіви
-pm2 set pm2-logrotate:retain 3
-
-# Ротація двічі на тиждень
+# Ротація по Понеділках і Четвергах
 pm2 set pm2-logrotate:rotateInterval '0 0 * * 1,4'
 
-# Стискання логів
+# Зберігати тільки 3 останні архіви
+pm2 set pm2-logrotate:retain 3
 pm2 set pm2-logrotate:compress true
-
-# Зберегти
-pm2 save
 ```
 
 ---

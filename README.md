@@ -1,172 +1,229 @@
-**How to turn an old smartphone into a full-fledged server for bots (Python, AI, Tunneling).**
+# 📱 Android Pocket Server Handbook
 
-[![Ukrainian](https://img.shields.io/badge/Lang-Ukrainian-blue)](README.ua.md)
+Turn an Android smartphone into a fully functional server for bots, tunneling, and automation.
 
-This guide describes how to configure **Termux** on Android to host Telegram bots, web apps, or scripts using professional tools (PM2, Cloudflare, Logrotate). No VPS required, just your phone.
+> **Works on Android 8–14**
+> Fully tested on Android 13 with Termux (F-Droid build).
 
 ---
 
-## 🚀 Chapter 1: Termux Preparation
+# ⚠️ Important Notes
 
-Transforming your phone into a Linux terminal.
+### ❗ Use ONLY Termux from F-Droid
 
-**1. Base Installation:**
+The Google Play version:
+
+* has broken permissions
+* can't run long-living processes
+* may kill SSH / PM2 / cloudflared
+* lacks core patches
+
+Download:
+[https://f-droid.org/packages/com.termux/](https://f-droid.org/packages/com.termux/)
+
+### ❗ Android 12–14 Warning
+
+Some networking restrictions require using **proot wrapper** for cloudflared stability.
+This README already includes the correct, tested configuration.
+
+---
+
+# 🚀 Chapter 1 — Prepare Termux
+
+### 1. Base installation
 
 ```bash
 pkg update && pkg upgrade
-pkg install python nodejs git openssh
+pkg install python nodejs git openssh nano proot
 ```
 
-**Immortality (Wakelock):**
-To prevent Android from "killing" background processes, you must disable CPU sleep. 
-* Click `Acquire Wakelock` in the Termux notification shade.
-* Or run the command:
+### 2. Enable Wakelock (prevents Android from killing your server)
+
+**Option A:**
+Swipe down → find Termux notification → tap **Acquire Wakelock**
+
+**Option B:**
 
 ```bash
 termux-wake-lock
 ```
 
+### 3. Battery optimization (mandatory)
+
+Open:
+**Settings → Apps → Termux → Battery → Allow background activity + Disable battery optimizations**
+
 ---
 
-## 🚪 Chapter 2: SSH & Remote Access
+# 🚪 Chapter 2 — SSH Server (with Zero Trust)
 
-How to manage your phone from a laptop over the internet (bypassing NAT without a static IP).
+This setup gives you stable SSH access **from anywhere**, even behind CG-NAT or mobile internet.
 
-### 1. SSH Server On the phone:
+## Step 1 — Configure SSH on Termux
 
 ```bash
-# Задати пароль (обов'язково!)
-passwd
-
-# Запустити сервер (порт 8022)
-sshd
-
-# Дізнатися свій логін
-whoami
+passwd              # set password
+sshd                # start SSH on port 8022
+whoami              # get username (example: u0_a123)
 ```
 
-**⚠️ Note:** SSH in Termux runs on port **8022**.
+⚠️ Termux SSH always uses **port 8022**.
 
-### 2. Cloudflare Tunnel (cloudflared)
+---
 
-Tunneling to the outside world.
+# 🌐 Chapter 3 — Cloudflare Zero Trust SSH
 
-**Installation (ARM64):**
+This is the recommended and stable method for remote access.
+
+## Step 1 — Install cloudflared (with proot for Android 12–14)
 
 ```bash
 wget https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-arm64
+chmod +x cloudflared-linux-arm64
 mv cloudflared-linux-arm64 $PREFIX/bin/cloudflared
-chmod +x $PREFIX/bin/cloudflared
-``` 
+```
 
-**Manual Start (Test):**
+If cloudflared fails on your device (Android 12–14), use **proot wrapper**:
+
+```bash
+proot -0 cloudflared tunnel run --token <YOUR_TOKEN>
+```
+
+Works 100% reliably.
+
+---
+
+## Step 2 — Configure Tunnel in Zero Trust Dashboard
+
+1. Open Cloudflare → Zero Trust → Access → Tunnels
+2. Create new tunnel
+3. Add Public Hostname
+4. Choose:
+
+   * **Service**: `ssh://localhost:8022`
+   * **Authentication**: your email / OTP / GitHub login
+5. Copy your **Tunnel Token**
+
+---
+
+## Step 3 — Start tunnel (manual test)
 
 ```bash
 cloudflared tunnel run --token <YOUR_TOKEN>
 ```
 
-**Auto-start via PM2:**
-*⚠️ Important: Use full path to avoid PM2 errors:*
+or if Android 12–14 gives issues:
 
 ```bash
-pm2 start /data/data/com.termux/files/usr/bin/cloudflared --name "phone" -- tunnel run --token <YOUR_TOKEN>
+proot -0 cloudflared tunnel run --token <YOUR_TOKEN>
 ```
 
-**DNS Fix** (if you get "connection refused" error):
-Open `nano $PREFIX/etc/resolv.conf` and write:
+---
 
-```text
-nameserver 1.1.1.1
+## Step 4 — PM2 Autostart (correct way)
+
+```bash
+npm install pm2 -g
+pm2 start cloudflared --name tunnel -- \
+  tunnel run --protocol http2 --token <YOUR_TOKEN>
+pm2 save
 ```
 
-### 3. Client Connection (PC/Mac)
+⚠️ No termux-chroot, no proot inside PM2.
+Let cloudflared decide internally.
 
-Configuration file: `~/.ssh/config`:
+---
+
+## Step 5 — SSH from PC
+
+Install cloudflared on your computer:
+[https://developers.cloudflare.com/cloudflare-one/connections/connect-apps/install-and-setup/installation/](https://developers.cloudflare.com/cloudflare-one/connections/connect-apps/install-and-setup/installation/)
+
+Login:
+
+```bash
+cloudflared access login phone.your-domain.com
+```
+
+Your SSH config (`~/.ssh/config`):
 
 ```text
 Host phone
   HostName phone.your-domain.com
-  User u0_a... (your phone username)
+  User u0_a123
   ProxyCommand cloudflared access ssh --hostname %h
 ```
 
 Connect:
+
 ```bash
 ssh phone
 ```
 
 ---
 
-## ⚙️ Chapter 3: PM2 (Process Manager)
+# ⚙️ Chapter 4 — PM2 for Bots
 
-Running scripts as services (auto-restart, logs, background).
-
-**1. Installation:**
+### Install:
 
 ```bash
 npm install pm2 -g
 ```
 
-**2. Basic Commands:**
+### Run Python bot:
 
-* `pm2 start bot.py --interpreter python --name "my-bot"` — start Python bot.
-* `pm2 list` — status of all processes.
-* `pm2 logs` — view logs.
-* `pm2 save` — **save process list** (to restore after reboot).
-* `pm2 resurrect` — restore saved processes.
+```bash
+pm2 start bot.py --interpreter python --name mybot
+pm2 save
+```
+
+### Useful commands:
+
+* `pm2 logs`
+* `pm2 list`
+* `pm2 restart mybot`
+* `pm2 resurrect`
 
 ---
 
-## 🧹 Chapter 4: Automatic Cleaning (Logrotate)
-
-Prevent logs from consuming all phone storage.
-
-**1. Install Module:**
+# 🧹 Chapter 5 — Logrotate (prevents storage overflow)
 
 ```bash
 pm2 install pm2-logrotate
-```
 
-**2. Optimal Config for Android:**
-
-```bash
-# Max file size limit (10 MB)
 pm2 set pm2-logrotate:max_size 10M
-
-# Check frequency: Mondays and Thursdays (1,4). Evenly splits the week.
-pm2 set pm2-logrotate:rotateInterval '0 0 * * 1,4'
-
-# Keep only last 3 archives
 pm2 set pm2-logrotate:retain 3
+pm2 set pm2-logrotate:rotateInterval '0 0 * * 1,4'
 pm2 set pm2-logrotate:compress true
-```
 
-**3. Save Settings:**
-
-```bash
 pm2 save
 ```
 
 ---
 
-## 🤖 Bonus: .env Template for Bots
+# 🔐 Chapter 6 — .env Template
 
-**Never store tokens in your code! Use environment variables.**
-
-File `.env`:
-
-```ini
-BOT_TOKEN=123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11
+```
+BOT_TOKEN=123
 GROQ_API_KEY=gsk_...
-ADMIN_ID=123456789
+ADMIN_ID=123456
 ```
 
-Python Code:
+Python:
 
 ```python
-import os
 from dotenv import load_dotenv
-
+import os
 load_dotenv()
 token = os.getenv("BOT_TOKEN")
+```
+
+---
+
+# ✅ Done
+
+Now your phone works as a **portable server** with stable tunneling, secure SSH, autostarting bots, and log rotation.
+
+```
+Portable. Reliable. Zero Trust secured.
 ```
